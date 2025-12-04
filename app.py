@@ -3,51 +3,38 @@ import librosa
 import numpy as np
 import io
 
-# Page Config
-st.set_page_config(
-    page_title="Stone Garden 播客分類器",
-    page_icon="",
-    layout="wide"
-)
-
-st.title("Stone Garden 播客分類器")
-st.markdown("### 自動分類播客 ► 獲得短視頻建議 ")
+st.set_page_config(page_title="Stone Garden Podcast Classifier", page_icon="gem", layout="wide")
+st.title("Stone Garden Podcast Classifier")
+st.markdown("### Auto-classify podcasts and get short video recommendations")
 st.divider()
 
 with st.sidebar:
-    st.header("使用指南")
-    st.markdown(""" 
-**步驟快速上手：**
-1. 上傳 MP3 播客檔案
-2. 系統自動分析
-3. 獲取短視頻推薦 """)
+    st.header("Usage Guide")
+    st.markdown("""**Quick start:**
+1. Upload MP3 file
+2. System analyzes automatically
+3. Get short video recommendations""")
 
-uploaded_file = st.file_uploader(
-    "選擇 MP3 檔案",
-    type=["mp3", "wav", "m4a"]
-)
+uploaded_file = st.file_uploader("Select MP3 file", type=["mp3", "wav", "m4a"])
 
 if uploaded_file is not None:
-    st.success(f"已上傳: {uploaded_file.name}")
+    st.success(f"Uploaded: {uploaded_file.name}")
     
-    with st.spinner("分析中..."):
+    with st.spinner("Analyzing..."):
         audio_bytes = uploaded_file.read()
         audio, sr = librosa.load(io.BytesIO(audio_bytes), sr=22050)
         duration = librosa.get_duration(y=audio, sr=sr)
         
         col1, col2, col3 = st.columns(3)
-        
         with col1:
-            st.metric("⏱️ 時長", f"{duration:.1f}秒")
-        
+            st.metric("Duration", f"{duration:.1f}s")
         with col2:
-            st.metric("🎵 採樣率", f"{sr}Hz")
-        
+            st.metric("Sample Rate", f"{sr}Hz")
         with col3:
-            st.metric("📈 樣本數", f"{len(audio):,}")
+            st.metric("Samples", f"{len(audio):,}")
         
         st.divider()
-        st.subheader("🔍 音頻特徵分析")
+        st.subheader("Audio Features Analysis")
         
         mfcc = librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=13)
         chroma = librosa.feature.chroma_stft(y=audio, sr=sr)
@@ -59,48 +46,36 @@ if uploaded_file is not None:
         rhythm_strength = np.std(zero_crossing)
         
         col1, col2 = st.columns(2)
-        
         with col1:
-            st.metric("🔥 能量度", f"{energy:.4f}")
-        
+            st.metric("Energy Level", f"{energy:.4f}")
         with col2:
-            st.metric("🎵 節奏強度", f"{rhythm_strength:.4f}")
+            st.metric("Rhythm Strength", f"{rhythm_strength:.4f}")
         
         st.divider()
-        st.subheader("🎯 播客分類結果")
-        
+        st.subheader("Classification Result")
         
         if energy > 0.01 and rhythm_strength > 0.1:
-            podcast_type = "🚀 動感節奏"
+            podcast_type = "Energy & Motivation"
             category = "energy"
-        
         elif chroma_mean[0] > 0.5:
-            podcast_type = "💊 靈性療癒"
+            podcast_type = "Spiritual Healing"
             category = "spiritual"
-        
         elif rhythm_strength < 0.05:
-            podcast_type = "🧘 冥想放鬆"
+            podcast_type = "Meditation & Mindfulness"
             category = "meditation"
-        
         else:
-            podcast_type = "📚 教學談話"
+            podcast_type = "Educational Teaching"
             category = "education"
         
         st.success(f"### {podcast_type}")
         
         suggestions = {
-        
-            "energy": "IG Reels: 15-20秒 | 高能量背景 + 水晶動畫",
-        
-            "spiritual": "Story/Shorts: 12-15秒 | 水晶堂 + 採光元素",
-        
-            "meditation": "TikTok: 20-30秒 | 靜謐背景 + 花卉動畫",
-        
-            "education": "YouTube Shorts: 30秒 | 資訊表 + 水晶知識"
-        
+            "energy": "IG Reels: 15-20s | High energy background + crystal animation",
+            "spiritual": "Story/Shorts: 12-15s | Crystal aesthetics + lighting elements",
+            "meditation": "TikTok: 20-30s | Calm background + flower animations",
+            "education": "YouTube Shorts: 30s | Information graphics + crystal knowledge"
         }
         
-        st.info(f"**建議**: {suggestions[category]}")
-        
+        st.info(f"**Recommendation:** {suggestions[category]}")
 else:
-    st.info("請上傳一個 MP3 檔案開始分析")
+    st.info("Upload an MP3 file to start analysis")
