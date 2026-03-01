@@ -7,6 +7,8 @@ Usage:
     python main.py             # Run scheduler + dashboard
     python main.py --scheduler # Run scheduler only (no dashboard)
     python main.py --dashboard # Run dashboard only (no scheduler)
+    python main.py --api       # Run REST API only (port 8502)
+    python api.py              # Run REST API directly
 """
 
 import sys
@@ -199,6 +201,8 @@ def main():
     parser = argparse.ArgumentParser(description="Brand Content Strategy Agent")
     parser.add_argument("--scheduler", action="store_true", help="Run scheduler only")
     parser.add_argument("--dashboard", action="store_true", help="Run dashboard only")
+    parser.add_argument("--api", action="store_true", help="Run REST API only (port 8502)")
+    parser.add_argument("--api-port", type=int, default=8502, help="REST API port (default: 8502)")
     parser.add_argument("--fetch-now", action="store_true", help="Run data fetch immediately")
     parser.add_argument("--analyze-now", action="store_true", help="Run weekly analysis immediately")
     parser.add_argument("--report-now", action="store_true", help="Generate and send report immediately")
@@ -247,6 +251,19 @@ def main():
             proc.wait()
         except KeyboardInterrupt:
             proc.terminate()
+        return
+
+    # REST API only
+    if args.api:
+        try:
+            import uvicorn
+            from api import app
+        except ImportError:
+            logger.error("FastAPI/uvicorn not installed. Run: pip install fastapi uvicorn[standard]")
+            return
+        logger.info(f"[Main] REST API running at http://localhost:{args.api_port}")
+        logger.info(f"[Main] API Docs: http://localhost:{args.api_port}/docs")
+        uvicorn.run(app, host="0.0.0.0", port=args.api_port, log_level="info")
         return
 
     # Default: scheduler + dashboard
