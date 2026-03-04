@@ -179,18 +179,23 @@ class TaskRunner {
 
   async _act(items) {
     const actCfg = this.config.act || {};
+    if (!actCfg.notify) return 0;
+
+    // Concurrency limit: default 3 parallel notifications
+    const concurrency = actCfg.concurrency || 3;
     let sent = 0;
+    let index = 0;
 
-    for (const item of items) {
-      if (actCfg.store && this.db) {
-        // Items are already stored via markSeen; additional storage hooks could go here
-      }
-
-      if (actCfg.notify) {
+    const worker = async () => {
+      while (index < items.length) {
+        const item = items[index++];
         const success = await this._sendWithRetry(item);
         if (success) sent++;
       }
-    }
+    };
+
+    const workerCount = Math.min(concurrency, items.length || 1);
+    await Promise.all(Array.from({ length: workerCount }, worker));
     return sent;
   }
 

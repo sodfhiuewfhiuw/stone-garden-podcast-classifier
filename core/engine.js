@@ -18,6 +18,7 @@ const path = require('path');
 const cron = require('node-cron');
 const chokidar = require('chokidar');
 const winston = require('winston');
+require('winston-daily-rotate-file');
 
 const Database = require('./database');
 const TaskRunner = require('./task');
@@ -32,16 +33,19 @@ function createLogger(logLevel = 'info') {
     fs.mkdirSync(logDir, { recursive: true });
   }
 
+  const fileFormat = winston.format.combine(
+    winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+    winston.format.errors({ stack: true }),
+    winston.format.json()
+  );
+
   return winston.createLogger({
     level: logLevel,
-    format: winston.format.combine(
-      winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-      winston.format.errors({ stack: true }),
-      winston.format.json()
-    ),
     transports: [
+      // Console: human-readable with colour
       new winston.transports.Console({
         format: winston.format.combine(
+          winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
           winston.format.colorize(),
           winston.format.printf(({ timestamp, level, message, ...meta }) => {
             const extra = Object.keys(meta).length ? ' ' + JSON.stringify(meta) : '';
@@ -49,12 +53,24 @@ function createLogger(logLevel = 'info') {
           })
         ),
       }),
-      new winston.transports.File({
-        filename: path.join(logDir, 'error.log'),
-        level: 'error',
+      // Daily rotating combined log — kept 14 days, max 20 MB per file
+      new winston.transports.DailyRotateFile({
+        dirname: logDir,
+        filename: 'app-%DATE%.log',
+        datePattern: 'YYYY-MM-DD',
+        maxFiles: '14d',
+        maxSize: '20m',
+        format: fileFormat,
       }),
-      new winston.transports.File({
-        filename: path.join(logDir, 'combined.log'),
+      // Daily rotating error-only log
+      new winston.transports.DailyRotateFile({
+        dirname: logDir,
+        filename: 'error-%DATE%.log',
+        datePattern: 'YYYY-MM-DD',
+        level: 'error',
+        maxFiles: '30d',
+        maxSize: '10m',
+        format: fileFormat,
       }),
     ],
   });
