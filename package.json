@@ -7,6 +7,7 @@
     "start": "node index.js",
     "reload": "node scripts/reload.js",
     "status": "node scripts/status.js",
+    "resend": "node scripts/resend.js",
     "test": "jest --runInBand",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage"
