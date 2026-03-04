@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Attention Matrix v2.0 - Entry Point
+ * Attention Matrix v1.0-alpha - Entry Point
  *
  * Usage:
  *   npm start           # Start the system

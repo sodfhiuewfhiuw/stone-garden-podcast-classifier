@@ -77,6 +77,7 @@ class AttentionMatrix extends EventEmitter {
     this.logger = createLogger();    // default level; updated after config load
     this.isRunning = false;
     this._watcher = null;
+    this._healthTimer = null;
   }
 
   // ── Initialization ────────────────────────────────────────────────────────
@@ -305,10 +306,13 @@ class AttentionMatrix extends EventEmitter {
         stats: this.db.getStats(id),
       });
     }
+    const mem = process.memoryUsage();
     return {
-      system: this.config.system.name,
+      system:  this.config.system.name,
       version: this.config.version,
-      uptime: process.uptime(),
+      uptime:  process.uptime(),
+      memory:  { heapMb: Math.round(mem.heapUsed / 1024 / 1024), rssMb: Math.round(mem.rss / 1024 / 1024) },
+      circuitBreaker: this.analyzer ? this.analyzer.getCircuitState() : null,
       tasks,
     };
   }
@@ -325,12 +329,14 @@ class AttentionMatrix extends EventEmitter {
 
   async start() {
     this.isRunning = true;
+    this._startHealthMonitor();
     this.logger.info('系統已啟動');
     this.emit('started');
   }
 
   async stop() {
     this.isRunning = false;
+    this._stopHealthMonitor();
     for (const [id, job] of this.cronJobs.entries()) {
       job.stop();
       this.logger.info(`排程停止: ${id}`);
@@ -342,6 +348,42 @@ class AttentionMatrix extends EventEmitter {
     if (this.db) this.db.close();
     this.logger.info('系統已停止');
     this.emit('stopped');
+  }
+
+  // ── Health monitoring ──────────────────────────────────────────────────────
+
+  _startHealthMonitor() {
+    const intervalMs = (this.config.system.health?.check_interval_s || 60) * 1000;
+    const heapWarnMb =  this.config.system.health?.heap_warn_mb || 512;
+
+    this._healthTimer = setInterval(() => {
+      const mem    = process.memoryUsage();
+      const heapMb = Math.round(mem.heapUsed / 1024 / 1024);
+      const rssMb  = Math.round(mem.rss      / 1024 / 1024);
+
+      this.logger.info('健康檢查', { heapMb, rssMb, uptime: Math.round(process.uptime()) });
+
+      if (heapMb > heapWarnMb) {
+        this.logger.warn('記憶體使用過高', { heapMb, threshold: heapWarnMb });
+      }
+
+      // Also log circuit breaker state if analyzer exists
+      if (this.analyzer) {
+        const cbState = this.analyzer.getCircuitState();
+        if (cbState.state !== 'CLOSED') {
+          this.logger.warn('AI 斷路器非正常狀態', cbState);
+        }
+      }
+    }, intervalMs);
+
+    this.logger.info('健康監控已啟動', { intervalMs, heapWarnMb });
+  }
+
+  _stopHealthMonitor() {
+    if (this._healthTimer) {
+      clearInterval(this._healthTimer);
+      this._healthTimer = null;
+    }
   }
 }
 
