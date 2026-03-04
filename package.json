@@ -1,0 +1,36 @@
+{
+  "name": "attention-matrix",
+  "version": "2.0.0",
+  "description": "可編程注意力系統 - 基於 OODA Loop 四層架構",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "reload": "node scripts/reload.js",
+    "status": "node scripts/status.js",
+    "test": "jest --runInBand",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.4.3",
+    "js-yaml": "^4.1.0",
+    "node-cron": "^3.0.3",
+    "puppeteer": "^22.4.0",
+    "winston": "^3.12.0",
+    "node-telegram-bot-api": "^0.66.0",
+    "axios": "^1.6.7",
+    "chokidar": "^3.6.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": ["**/tests/**/*.test.js"],
+    "collectCoverageFrom": [
+      "core/**/*.js",
+      "connectors/**/*.js",
+      "!**/node_modules/**"
+    ]
+  }
+}

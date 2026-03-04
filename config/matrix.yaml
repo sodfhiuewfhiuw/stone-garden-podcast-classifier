@@ -1,0 +1,79 @@
+# Attention Matrix
+# 可編程注意力系統 - 基礎架構
+
+version: "2.0"
+description: "讓 AI 幫你盯着世界，只把重要的事推給你決策"
+
+system:
+  name: "attention-matrix"
+  timezone: "Asia/Taipei"
+  log_level: "info"
+
+  database:
+    path: "./data/matrix.db"
+
+  notifications:
+    default_channel: "telegram"
+    channels:
+      telegram:
+        enabled: true
+        bot_token: "${TELEGRAM_BOT_TOKEN}"
+        chat_id: "${TELEGRAM_CHAT_ID}"
+
+  ai:
+    default_provider: "gemini"
+    providers:
+      gemini:
+        model: "gemini-2.5-flash"
+        api_url: "https://aiapi.clzjwl.cn/v1/chat/completions"
+        api_key: "${AI_API_KEY}"
+
+tasks:
+  - id: "taichung-jobs"
+    name: "台中徵才追蹤"
+    enabled: true
+
+    observe:
+      connector: "threads"
+      config:
+        keywords: ["台中徵才", "台中招聘", "台中工作"]
+        max_posts: 10
+        cookies_path: "./data/cookies.json"
+      schedule: "0 */2 * * *"
+
+    orient:
+      ai_analysis: true
+      extract_fields:
+        - email
+        - phone
+        - salary
+      filter_rules:
+        - "is_taichung == true"
+        - "is_job_posting == true"
+
+    decide:
+      priority_scoring:
+        has_email: +20
+        has_phone: +10
+        mentions_salary: +15
+      min_score: 20
+      deduplicate_window: "24h"
+
+    act:
+      notify: true
+      store: true
+
+connectors:
+  threads:
+    name: "Threads 社交平台"
+    type: "scraper"
+    module: "connectors/threads"
+    status: "ready"
+
+  rss:
+    name: "RSS 訂閱源"
+    type: "polling"
+    module: "connectors/rss"
+    status: "ready"
+
+plugins: {}
