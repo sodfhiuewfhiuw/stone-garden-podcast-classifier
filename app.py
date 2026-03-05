@@ -13,7 +13,7 @@ import hashlib
 import os
 import streamlit as st
 
-from health import get_health, render_health_sidebar, render_alerts
+from health import get_health, render_health_sidebar, render_alerts, dispatch_alerts
 from classifier import classify
 
 # ── PID lock ──────────────────────────────────────────────────────────────────
@@ -154,6 +154,8 @@ if layer_error:
     render_alerts(health)
 else:
     health.record_success(result.layer)
+
+dispatch_alerts(health, task_name=uploaded_file.name)
 
 # ── Metrics ───────────────────────────────────────────────────────────────────
 

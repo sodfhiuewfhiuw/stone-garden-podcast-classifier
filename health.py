@@ -8,6 +8,7 @@ Tracks:
 - Last successful analysis timestamp
 """
 
+import os
 import time
 from dataclasses import dataclass, field
 from typing import Optional
@@ -132,3 +133,39 @@ def render_alerts(health: HealthState) -> None:
             st.warning(f"WARNING — {alert}")
         elif alert.startswith("STALE"):
             st.warning(f"WARNING — {alert}")
+
+
+def dispatch_alerts(health: HealthState, task_name: str = "stone-garden") -> None:
+    """Send Telegram notifications for active health alerts.
+
+    Reads TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID from the environment.
+    Silent no-op when either variable is absent — never raises.
+    """
+    token   = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    if not token or not chat_id:
+        return
+
+    try:
+        import requests
+    except ImportError:
+        return
+
+    for alert in health.alerts:
+        icon = "🔴" if alert.startswith("CONSECUTIVE") else "🟠"
+        text = (
+            f"{icon} *Stone Garden alert*\n"
+            f"Task: `{task_name}`\n"
+            f"{alert}\n"
+            f"Layer: L{health.active_layer} | "
+            f"Analyses: {health.total_analyses} | "
+            f"Failures: {health.total_failures}"
+        )
+        try:
+            requests.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"},
+                timeout=5,
+            )
+        except Exception:
+            pass  # alerting must never crash the app

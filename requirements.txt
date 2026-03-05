@@ -2,5 +2,10 @@ streamlit>=1.28.0
 librosa>=0.9.0
 numpy>=1.21.0
 soundfile>=0.10.0
+requests>=2.28.0
+
+# AI classification layers (L1/L2 fallback)
+google-generativeai>=0.8.0
+openai>=1.0.0
 
 # Updated 2025-12-04 v3
