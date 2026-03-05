@@ -183,6 +183,11 @@ st.subheader("Classification Result")
 st.success(f"### {result.podcast_type}")
 st.info(f"**Recommendation:** {result.suggestion}")
 
+# ── One-click copy ────────────────────────────────────────────────────────────
+
+_copy_text = f"{result.podcast_type}\n{result.suggestion}"
+st.code(_copy_text, language=None)
+
 # ── Cache ─────────────────────────────────────────────────────────────────────
 
 st.session_state.processed_hashes[file_hash] = {
