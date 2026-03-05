@@ -1,13 +1,85 @@
-import streamlit as st
-import librosa
-import numpy as np
-import io
-import hashlib
+"""
+app.py — Stone Garden Podcast Classifier
 
-st.set_page_config(page_title="Stone Garden Podcast Classifier", page_icon="gem", layout="wide")
+Systemic improvements:
+  - PID lock: blocks duplicate Streamlit processes from sharing state
+  - Health monitor: tracks error rates, consecutive failures, stale detection
+  - 4-layer degradation: gracefully falls back when librosa analysis fails
+  - Duplicate detection: SHA-256 per-session cache avoids re-analysis
+  - Alert banners: surface actionable warnings immediately in the UI
+"""
+
+import hashlib
+import os
+import streamlit as st
+
+from health import get_health, render_health_sidebar, render_alerts
+from classifier import classify
+
+# ── PID lock ──────────────────────────────────────────────────────────────────
+# Warn when a second process tries to run — concurrent librosa loads on the
+# same file cache can corrupt state.
+
+LOCKFILE = "/tmp/stone-garden.pid"
+
+def _check_pid_lock() -> bool:
+    """Return True if this is the only running instance."""
+    my_pid = str(os.getpid())
+    if os.path.exists(LOCKFILE):
+        try:
+            stored = open(LOCKFILE).read().strip()
+            if stored and stored != my_pid:
+                try:
+                    os.kill(int(stored), 0)  # signal 0 = existence check only
+                    return False             # other process is alive
+                except (ProcessLookupError, PermissionError):
+                    pass                     # stale PID — safe to overwrite
+        except (ValueError, OSError):
+            pass
+    open(LOCKFILE, "w").write(my_pid)
+    return True
+
+
+def _render_cached_result(cached: dict) -> None:
+    layer = cached.get("layer", 1)
+    layer_labels = {
+        1: "L1 — Full analysis",
+        2: "L2 — Basic analysis",
+        3: "L3 — Metadata heuristic",
+        4: "L4 — Record-only",
+    }
+    st.markdown(f"**Analysis layer (cached):** {layer_labels.get(layer, f'L{layer}')}")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Duration",    cached["duration"])
+    with col2:
+        st.metric("Sample Rate", cached["sample_rate"])
+    with col3:
+        st.metric("Samples",     cached["samples"])
+    st.divider()
+    st.success(f"### {cached['podcast_type']}")
+    st.info(f"**Recommendation:** {cached['suggestion']}")
+
+
+# ── Page config ───────────────────────────────────────────────────────────────
+
+st.set_page_config(
+    page_title="Stone Garden Podcast Classifier",
+    page_icon="gem",
+    layout="wide",
+)
 st.title("Stone Garden Podcast Classifier")
 st.markdown("### Auto-classify podcasts and get short video recommendations")
 st.divider()
+
+# ── Session state init ────────────────────────────────────────────────────────
+
+if "processed_hashes" not in st.session_state:
+    st.session_state.processed_hashes = {}
+
+health = get_health()
+
+# ── Sidebar ───────────────────────────────────────────────────────────────────
 
 with st.sidebar:
     st.header("Usage Guide")
@@ -19,103 +91,106 @@ with st.sidebar:
     if st.button("Clear History"):
         st.session_state.processed_hashes = {}
         st.success("History cleared")
+    render_health_sidebar(health)
 
-# Initialize session state for duplicate detection
-if "processed_hashes" not in st.session_state:
-    st.session_state.processed_hashes = {}
+# ── PID lock warning ──────────────────────────────────────────────────────────
 
-def compute_file_hash(file_bytes: bytes) -> str:
-    return hashlib.sha256(file_bytes).hexdigest()
+if not _check_pid_lock():
+    st.error(
+        "DUPLICATE INSTANCE DETECTED — another Stone Garden process is already running. "
+        "Close that tab or stop the other process to avoid cache conflicts."
+    )
+    st.stop()
+
+# ── Alert banners ─────────────────────────────────────────────────────────────
+
+render_alerts(health)
+
+# ── Upload ────────────────────────────────────────────────────────────────────
 
 uploaded_file = st.file_uploader("Select MP3 file", type=["mp3", "wav", "m4a"])
 
-if uploaded_file is not None:
-    audio_bytes = uploaded_file.read()
-    file_hash = compute_file_hash(audio_bytes)
-
-    if file_hash in st.session_state.processed_hashes:
-        cached = st.session_state.processed_hashes[file_hash]
-        st.warning(f"Duplicate detected: **{uploaded_file.name}** was already analyzed.")
-        st.info(f"Showing cached result from previous upload: **{cached['filename']}**")
-        st.success(f"### {cached['podcast_type']}")
-        st.info(f"**Recommendation:** {cached['suggestion']}")
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Duration", cached["duration"])
-        with col2:
-            st.metric("Sample Rate", cached["sample_rate"])
-        with col3:
-            st.metric("Samples", cached["samples"])
-    else:
-        st.success(f"Uploaded: {uploaded_file.name}")
-
-        with st.spinner("Analyzing..."):
-            audio, sr = librosa.load(io.BytesIO(audio_bytes), sr=22050)
-            duration = librosa.get_duration(y=audio, sr=sr)
-
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Duration", f"{duration:.1f}s")
-            with col2:
-                st.metric("Sample Rate", f"{sr}Hz")
-            with col3:
-                st.metric("Samples", f"{len(audio):,}")
-
-            st.divider()
-            st.subheader("Audio Features Analysis")
-
-            mfcc = librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=13)
-            chroma = librosa.feature.chroma_stft(y=audio, sr=sr)
-            zero_crossing = librosa.feature.zero_crossing_rate(audio)
-
-            mfcc_mean = np.mean(mfcc, axis=1)
-            chroma_mean = np.mean(chroma, axis=1)
-            energy = np.sum(audio**2) / len(audio)
-            rhythm_strength = np.std(zero_crossing)
-
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Energy Level", f"{energy:.4f}")
-            with col2:
-                st.metric("Rhythm Strength", f"{rhythm_strength:.4f}")
-
-            st.divider()
-            st.subheader("Classification Result")
-
-            if energy > 0.01 and rhythm_strength > 0.1:
-                podcast_type = "Energy & Motivation"
-                category = "energy"
-            elif chroma_mean[0] > 0.5:
-                podcast_type = "Spiritual Healing"
-                category = "spiritual"
-            elif rhythm_strength < 0.05:
-                podcast_type = "Meditation & Mindfulness"
-                category = "meditation"
-            else:
-                podcast_type = "Educational Teaching"
-                category = "education"
-
-            suggestions = {
-                "energy": "IG Reels: 15-20s | High energy background + crystal animation",
-                "spiritual": "Story/Shorts: 12-15s | Crystal aesthetics + lighting elements",
-                "meditation": "TikTok: 20-30s | Calm background + flower animations",
-                "education": "YouTube Shorts: 30s | Information graphics + crystal knowledge"
-            }
-            suggestion = suggestions[category]
-
-            st.success(f"### {podcast_type}")
-            st.info(f"**Recommendation:** {suggestion}")
-
-            # Cache result for duplicate detection
-            st.session_state.processed_hashes[file_hash] = {
-                "filename": uploaded_file.name,
-                "podcast_type": podcast_type,
-                "suggestion": suggestion,
-                "duration": f"{duration:.1f}s",
-                "sample_rate": f"{sr}Hz",
-                "samples": f"{len(audio):,}",
-            }
-else:
+if uploaded_file is None:
     st.info("Upload an MP3 file to start analysis")
+    st.stop()
 
-# Updated 2025-12-04
+audio_bytes = uploaded_file.read()
+file_hash   = hashlib.sha256(audio_bytes).hexdigest()
+
+# ── Duplicate detection ───────────────────────────────────────────────────────
+
+if file_hash in st.session_state.processed_hashes:
+    cached = st.session_state.processed_hashes[file_hash]
+    st.warning(f"Duplicate detected: **{uploaded_file.name}** was already analyzed.")
+    st.info(f"Showing cached result (original: **{cached['filename']}**)")
+    _render_cached_result(cached)
+    st.stop()
+
+# ── Classification ────────────────────────────────────────────────────────────
+
+st.success(f"Uploaded: {uploaded_file.name}")
+
+with st.spinner("Analyzing…"):
+    result, layer_error = classify(audio_bytes, uploaded_file.name)
+
+# Layer status badge
+layer_colors = {1: "green", 2: "orange", 3: "red", 4: "gray"}
+layer_labels  = {
+    1: "L1 — Full analysis (MFCC + Chroma + ZCR)",
+    2: "L2 — Basic analysis (energy + ZCR only)",
+    3: "L3 — Metadata heuristic (filename-based)",
+    4: "L4 — Record-only (manual review required)",
+}
+color = layer_colors[result.layer]
+st.markdown(f"**Analysis layer:** :{color}[{layer_labels[result.layer]}]")
+
+if result.warning:
+    st.error(result.warning) if result.layer >= 3 else st.warning(result.warning)
+
+# ── Health tracking ───────────────────────────────────────────────────────────
+
+if layer_error:
+    health.record_failure(layer_error)
+    render_alerts(health)
+else:
+    health.record_success(result.layer)
+
+# ── Metrics ───────────────────────────────────────────────────────────────────
+
+if any([result.duration, result.sample_rate, result.samples]):
+    st.divider()
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Duration",    result.duration    or "—")
+    with col2:
+        st.metric("Sample Rate", result.sample_rate or "—")
+    with col3:
+        st.metric("Samples",     result.samples     or "—")
+
+if any([result.energy, result.rhythm]):
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Energy Level",    result.energy or "—")
+    with col2:
+        st.metric("Rhythm Strength", result.rhythm or "—")
+
+# ── Result ────────────────────────────────────────────────────────────────────
+
+st.divider()
+st.subheader("Classification Result")
+st.success(f"### {result.podcast_type}")
+st.info(f"**Recommendation:** {result.suggestion}")
+
+# ── Cache ─────────────────────────────────────────────────────────────────────
+
+st.session_state.processed_hashes[file_hash] = {
+    "filename":     uploaded_file.name,
+    "podcast_type": result.podcast_type,
+    "suggestion":   result.suggestion,
+    "duration":     result.duration     or "—",
+    "sample_rate":  result.sample_rate  or "—",
+    "samples":      result.samples      or "—",
+    "energy":       result.energy       or "—",
+    "rhythm":       result.rhythm       or "—",
+    "layer":        result.layer,
+}
