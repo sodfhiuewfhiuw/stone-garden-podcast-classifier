@@ -12,6 +12,7 @@ Systemic improvements:
 import hashlib
 import os
 import streamlit as st
+import streamlit.components.v1 as components
 
 from health import get_health, render_health_sidebar, render_alerts, dispatch_alerts
 from classifier import classify
@@ -183,10 +184,23 @@ st.subheader("Classification Result")
 st.success(f"### {result.podcast_type}")
 st.info(f"**Recommendation:** {result.suggestion}")
 
-# ── Copy-paste area ───────────────────────────────────────────────────────────
+# ── One-click copy button ─────────────────────────────────────────────────────
 
 _copy_text = f"{result.podcast_type}\n{result.suggestion}"
-st.text_area("Copy result", value=_copy_text, height=80, label_visibility="collapsed")
+_escaped   = _copy_text.replace("\\", "\\\\").replace("`", "\\`")
+components.html(
+    f"""
+    <button id="cpbtn"
+      onclick="navigator.clipboard.writeText(`{_escaped}`)
+               .then(()=>{{this.textContent='✓ Copied!';setTimeout(()=>this.textContent='📋 Copy',2000)}})
+               .catch(()=>this.textContent='Error')"
+      style="padding:8px 18px;background:#4CAF50;color:#fff;border:none;
+             border-radius:6px;cursor:pointer;font-size:14px">
+      📋 Copy
+    </button>
+    """,
+    height=48,
+)
 
 # ── Cache ─────────────────────────────────────────────────────────────────────
 
