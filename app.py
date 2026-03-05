@@ -183,10 +183,10 @@ st.subheader("Classification Result")
 st.success(f"### {result.podcast_type}")
 st.info(f"**Recommendation:** {result.suggestion}")
 
-# ── One-click copy ────────────────────────────────────────────────────────────
+# ── Copy-paste area ───────────────────────────────────────────────────────────
 
 _copy_text = f"{result.podcast_type}\n{result.suggestion}"
-st.code(_copy_text, language=None)
+st.text_area("Copy result", value=_copy_text, height=80, label_visibility="collapsed")
 
 # ── Cache ─────────────────────────────────────────────────────────────────────
 
